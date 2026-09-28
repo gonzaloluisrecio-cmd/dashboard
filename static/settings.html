@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2563eb">
+  <title>Settings · Dashboard</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Settings</h1>
+      <p class="muted">Add or remove the accounts shown on your dashboard. Changes apply right away.</p>
+    </div>
+    <div class="actions">
+      <button id="theme" type="button" title="Toggle light/dark">◐</button>
+      <a class="button primary" href="/">← Dashboard</a>
+    </div>
+  </header>
+
+  <main class="settings">
+    <section class="card" id="email">
+      <header class="card-head"><h2>✉️ Email accounts</h2></header>
+      <div class="card-body">
+        <ul class="entries"></ul>
+        <form>
+          <div class="row">
+            <label>Provider
+              <select name="provider">
+                <option value="gmail">Gmail</option>
+                <option value="outlook">Outlook / Hotmail</option>
+                <option value="yahoo">Yahoo</option>
+                <option value="icloud">iCloud</option>
+                <option value="other">Other (IMAP)</option>
+              </select>
+            </label>
+            <label>Label (optional)<input name="name" placeholder="Personal, Work…"></label>
+          </div>
+          <div class="row">
+            <label>Email address<input name="username" type="email" required autocomplete="off"></label>
+            <label>App password<input name="password" type="password" required autocomplete="new-password"></label>
+          </div>
+          <div class="row only-other" hidden>
+            <label>IMAP server<input name="host" placeholder="imap.example.com"></label>
+            <label>Port<input name="port" type="number" value="993"></label>
+          </div>
+          <label class="check only-gmail"><input name="gmail_primary" type="checkbox" checked> Only the “Primary” tab</label>
+          <button class="primary" type="submit">Add account</button>
+          <p class="error" hidden></p>
+        </form>
+        <details class="help">
+          <summary>Where do I get an app password?</summary>
+          <p><b>Gmail:</b> turn on 2-Step Verification, then go to
+            <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>,
+            create one called “Dashboard” and paste the 16 letters here.</p>
+          <p><b>Yahoo:</b> Account security → Generate app password.
+            <b>iCloud:</b> <a href="https://account.apple.com" target="_blank" rel="noopener">account.apple.com</a> → App-Specific Passwords.</p>
+          <p><b>Outlook/Hotmail:</b> Microsoft has turned off password logins for many personal accounts. If it fails,
+            forward that mailbox to a Gmail account and add the Gmail one.</p>
+          <p>The dashboard only reads your mail. It never marks anything as read.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="card" id="calendly">
+      <header class="card-head"><h2>📅 Calendly</h2></header>
+      <div class="card-body">
+        <p class="status-line muted"></p>
+        <form>
+          <label>Personal access token<input name="token" type="password" autocomplete="off" required></label>
+          <button class="primary" type="submit">Connect</button>
+          <button class="danger remove" type="button" hidden>Disconnect</button>
+          <p class="error" hidden></p>
+        </form>
+        <details class="help">
+          <summary>How do I get a token?</summary>
+          <p>In Calendly open <a href="https://calendly.com/integrations/api_webhooks" target="_blank" rel="noopener">Integrations → API &amp; Webhooks</a>,
+            click “Generate new token”, name it “Dashboard” and paste it here. Free Calendly plans can do this.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="card" id="gcal">
+      <header class="card-head"><h2>🗓️ Google Calendar</h2></header>
+      <div class="card-body">
+        <ul class="entries"></ul>
+        <form>
+          <div class="row">
+            <label>Label (optional)<input name="name" placeholder="Personal"></label>
+            <label>Secret address in iCal format<input name="ics_url" type="url" required autocomplete="off"
+              placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"></label>
+          </div>
+          <button class="primary" type="submit">Add calendar</button>
+          <p class="error" hidden></p>
+        </form>
+        <details class="help">
+          <summary>Where do I find that address?</summary>
+          <p>On a computer, open <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener">Google Calendar settings</a>,
+            click your calendar under “Settings for my calendars”, scroll to <b>Integrate calendar</b> and copy
+            <b>Secret address in iCal format</b>. No Google login is needed. Keep the link private, because anyone who has it can read the calendar.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="card" id="youtube">
+      <header class="card-head"><h2>▶️ YouTube channels</h2></header>
+      <div class="card-body">
+        <ul class="entries"></ul>
+        <form>
+          <label>Channel link or @handle<input name="channel" required placeholder="https://www.youtube.com/@veritasium"></label>
+          <button class="primary" type="submit">Add channel</button>
+          <p class="error" hidden></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" id="podcasts">
+      <header class="card-head"><h2>🎙️ Podcasts</h2></header>
+      <div class="card-body">
+        <ul class="entries"></ul>
+        <form class="search">
+          <label>Search by name<input name="q" placeholder="e.g. Lex Fridman" autocomplete="off"></label>
+          <button type="submit">Search</button>
+        </form>
+        <ul class="results"></ul>
+        <form class="add">
+          <label>…or paste an RSS feed / Apple Podcasts link<input name="url" type="url" required></label>
+          <button class="primary" type="submit">Add podcast</button>
+          <p class="error" hidden></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" id="ai">
+      <header class="card-head"><h2>✨ AI summaries (optional, free)</h2></header>
+      <div class="card-body">
+        <p class="status-line muted"></p>
+        <p class="muted">Without this, each email shows its first line and the news card shows headlines.
+          With a free Google Gemini key, you get a one-line AI summary of each email and a short news digest.</p>
+        <form>
+          <div class="row">
+            <label>Gemini API key<input name="api_key" type="password" autocomplete="off" required></label>
+            <label>Language<input name="language" placeholder="Spanish"></label>
+          </div>
+          <button class="primary" type="submit">Save</button>
+          <button class="danger remove" type="button" hidden>Turn off</button>
+          <p class="error" hidden></p>
+        </form>
+        <details class="help">
+          <summary>How do I get a free key?</summary>
+          <p>Go to <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>,
+            sign in with Google and click “Create API key”. The free tier is plenty for a dashboard. Note that Google may use
+            free-tier requests to improve its products, so leave this off if you don't want your email subjects and snippets sent to Google.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+  <script src="/static/theme.js"></script>
+  <script src="/static/settings.js"></script>
+</body>
+</html>

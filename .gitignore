@@ -5,3 +5,4 @@ venv/
 .env
 config.yaml
 .pytest_cache/
+data/

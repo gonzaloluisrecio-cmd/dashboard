@@ -8,7 +8,7 @@ section kind, so new widgets never need frontend changes:
          "stats": [{"label": "Blue", "value": "$1,230", "sub": "Compra $1,210", "trend": "up"}],
          "table": {"columns": ["Casa", "Compra", "Venta"], "rows": [["Blue", "1,210", "1,230"]]},
          "items": [{"title": "...", "url": "...", "subtitle": "...", "meta": "...",
-                    "badge": "NEW", "image": "https://..."}],
+                    "badge": "NEW", "image": "https://...", "summary": "one-line summary"}],
          "text": "Free text (e.g. an AI summary). Lines starting with '- ' become bullets.",
          "empty": "Shown when the section has nothing else"}
     ]}
@@ -89,7 +89,7 @@ class Widget:
     def option(self, name: str, default: Any = None, required: bool = False) -> Any:
         value = self.options.get(name, default)
         if required and value in (None, "", []):
-            raise WidgetError(f"Not set up yet: '{name}' is missing. Add it in config.yaml (or .env) and restart.")
+            raise WidgetError(f"Not set up yet: '{name}' is missing. Add it in Settings (⚙).")
         return value
 
     def validate(self) -> None:
@@ -106,9 +106,10 @@ def stat(label: str, value: Any, sub: str | None = None, trend: str | None = Non
 
 
 def item(title: str, url: str | None = None, subtitle: str | None = None,
-         meta: str | None = None, badge: str | None = None, image: str | None = None) -> dict:
+         meta: str | None = None, badge: str | None = None, image: str | None = None,
+         summary: str | None = None) -> dict:
     return {"title": title, "url": url, "subtitle": subtitle, "meta": meta,
-            "badge": badge, "image": image}
+            "badge": badge, "image": image, "summary": summary}
 
 
 def trend_of(value: float | None) -> str | None:

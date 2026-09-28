@@ -52,6 +52,7 @@ function renderItems(items) {
     return `<li>${img}<div class="body">
       <div class="title">${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ""}${title}</div>
       ${line2 ? `<div class="line2">${line2}</div>` : ""}
+      ${it.summary ? `<div class="summary">${esc(it.summary)}</div>` : ""}
     </div></li>`;
   }).join("")}</ul>`;
 }
@@ -84,11 +85,15 @@ async function loadWidget(id, force = false) {
   el.classList.add("loading");
   try {
     const res = await fetch(`/api/widgets/${encodeURIComponent(id)}${force ? "?force=true" : ""}`);
+    if (res.status === 401) return (location.href = "/login");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
     card.payload = payload;
     const body = el.querySelector(".card-body");
-    const err = payload.error ? `<div class="error">${esc(payload.error)}${payload.data ? " (showing last good data)" : ""}</div>` : "";
+    const setup = /^Not set up yet/.test(payload.error || "") && !payload.data;
+    const err = !payload.error ? ""
+      : setup ? `<p class="muted">${esc(payload.error.replace(/ Add it in Settings.*$/, ""))} <a href="/settings">Open Settings →</a></p>`
+      : `<div class="error">${esc(payload.error)}${payload.data ? " (showing last good data)" : ""}</div>`;
     body.innerHTML = err + (payload.data ? renderSections(payload.data.sections || []) : "");
   } catch (e) {
     el.querySelector(".card-body").innerHTML = `<div class="error">${esc(e.message)}</div>`;
@@ -108,6 +113,7 @@ function updateStatus(id) {
 
 async function init() {
   const res = await fetch("/api/layout");
+  if (res.status === 401) return (location.href = "/login");
   const layout = await res.json();
   document.title = layout.title;
   document.getElementById("title").textContent = layout.title;
@@ -121,6 +127,9 @@ async function init() {
   tick();
   setInterval(tick, 30000);
 
+  if (!layout.widgets.length) {
+    grid.innerHTML = `<p class="muted">Nothing to show yet. Open <a href="/settings">Settings</a> to add your accounts.</p>`;
+  }
   for (const spec of layout.widgets) {
     const el = tpl.content.firstElementChild.cloneNode(true);
     el.classList.add(`size-${spec.size}`, `type-${spec.type}`);
@@ -133,17 +142,5 @@ async function init() {
 }
 
 document.getElementById("refresh-all").addEventListener("click", () => cards.forEach((_, id) => loadWidget(id, true)));
-
-const THEME_KEY = "dashboard-theme";
-const applyTheme = (t) => (t ? document.documentElement.setAttribute("data-theme", t) : document.documentElement.removeAttribute("data-theme"));
-try { applyTheme(localStorage.getItem(THEME_KEY)); } catch {}
-document.getElementById("theme").addEventListener("click", () => {
-  const dark = document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === "dark"
-    : matchMedia("(prefers-color-scheme: dark)").matches;
-  const next = dark ? "light" : "dark";
-  applyTheme(next);
-  try { localStorage.setItem(THEME_KEY, next); } catch {}
-});
 
 init().catch((e) => { grid.innerHTML = `<div class="error">Could not load dashboard: ${esc(e.message)}</div>`; });

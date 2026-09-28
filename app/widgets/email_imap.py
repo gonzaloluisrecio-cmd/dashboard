@@ -1,4 +1,5 @@
-"""Unread mail in the main inbox of one or more IMAP accounts, with an optional AI summary.
+"""Unread mail in the main inbox of one or more IMAP accounts, with a one-line
+summary per email (AI when enabled, otherwise the start of the message).
 
 Messages are read with BODY.PEEK so nothing gets marked as read.
 For Gmail, use an App Password (Google Account → Security → App passwords) and
@@ -69,6 +70,26 @@ def parse_message(raw: bytes) -> dict[str, Any]:
     }
 
 
+def one_liner(snippet: str, limit: int = 140) -> str:
+    snippet = snippet.strip()
+    return snippet if len(snippet) <= limit else snippet[: limit - 1].rstrip() + "…"
+
+
+def test_login(account: dict[str, Any]) -> None:
+    """Blocking: log in and select the folder, raising on failure. Used when adding an account."""
+    conn = imaplib.IMAP4_SSL(account["host"], int(account.get("port", 993)), timeout=20)
+    try:
+        conn.login(account["username"], account["password"])
+        typ, data = conn.select(account.get("folder", "INBOX"), readonly=True)
+        if typ != "OK":
+            raise WidgetError(f"cannot open folder {account.get('folder', 'INBOX')}: {data}")
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+
 def fetch_unread(account: dict[str, Any], max_messages: int) -> tuple[int, list[dict[str, Any]]]:
     """Blocking IMAP fetch. Returns (total unread, newest `max_messages` messages)."""
     host = account["host"]
@@ -108,7 +129,7 @@ class EmailWidget(Widget):
       accounts: list of {name, host, port (993), username, password,
                          folder (INBOX), gmail_primary (false), search (UNSEEN)}
       max_messages: messages listed per account (default 8)
-      summarize: AI summary per account (needs `ai.enabled`), default true
+      summarize: AI one-line summary per email (needs `ai.enabled`), default true
     """
 
     default_refresh_minutes = 10
@@ -118,7 +139,7 @@ class EmailWidget(Widget):
             missing = [k for k in ("host", "username", "password") if not acc.get(k)]
             if missing:
                 raise WidgetError(f"Not set up yet: email account '{acc.get('name', '?')}' is missing "
-                                  f"{', '.join(missing)}. Add it in .env and restart.")
+                                  f"{', '.join(missing)}.")
 
     async def _account_section(self, acc: dict[str, Any]) -> dict[str, Any]:
         name = acc.get("name") or acc["username"]
@@ -129,33 +150,34 @@ class EmailWidget(Widget):
             return {"heading": name, "text": f"Could not read mailbox: {exc}"}
 
         now = self.ctx.now()
+        lines = [one_liner(m["snippet"]) for m in messages]
+        summarizer = self.ctx.summarizer
+        if self.option("summarize", True) and summarizer and summarizer.available and messages:
+            ai_lines = await summarizer.summarize_lines(
+                "Summarize each of these unread emails in one line: what it is about and "
+                "whether it asks me for anything.",
+                [f"From: {m['from']} <{m['from_addr']}> | Subject: {m['subject']} | {m['snippet'][:400]}"
+                 for m in messages],
+            )
+            if ai_lines:
+                lines = [ai or fallback for ai, fallback in zip(ai_lines, lines)]
         items = [
             item(
                 m["subject"],
                 subtitle=m["from"],
                 meta=relative_time(m["date"], now) if isinstance(m["date"], datetime) else None,
+                summary=line or None,
             )
-            for m in messages
+            for m, line in zip(messages, lines)
         ]
-        section: dict[str, Any] = {
+        more = total - len(messages)
+        return {
             "heading": name,
             "stats": [stat("Unread", total, trend="up" if total else None)],
             "items": items,
+            "text": f"…and {more} more unread." if more > 0 else None,
             "empty": "Inbox zero 🎉",
         }
-        summarizer = self.ctx.summarizer
-        if self.option("summarize", True) and summarizer and summarizer.available and messages:
-            digest = "\n".join(
-                f"- From: {m['from']} <{m['from_addr']}> | Subject: {m['subject']} | {m['snippet'][:400]}"
-                for m in messages
-            )
-            section["text"] = await summarizer.summarize(
-                "These are my unread emails. In 3-5 bullets, tell me what needs my attention "
-                "(requests, deadlines, money, people waiting on me) and group the rest "
-                "(newsletters, notifications) in one line.",
-                digest,
-            )
-        return section
 
     async def fetch(self) -> dict[str, Any]:
         sections = await asyncio.gather(*(self._account_section(a) for a in self.option("accounts")))

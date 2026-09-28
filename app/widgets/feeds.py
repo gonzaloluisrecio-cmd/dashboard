@@ -1,4 +1,4 @@
-"""RSS/Atom based widgets: blogs, YouTube channels and news.
+"""RSS/Atom based widgets: blogs, YouTube channels, podcasts and news.
 
 All of them share the same feed fetching + parsing code, so any site with a
 feed can be tracked. "New" means published within `new_within_hours`.
@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import httpx
@@ -54,6 +54,7 @@ def _clean(text: str, limit: int = 300) -> str:
 
 def parse_feed(content: bytes | str, source: str) -> list[Entry]:
     parsed = feedparser.parse(content)
+    feed_image = (parsed.feed.get("image") or {}).get("href")  # e.g. podcast artwork
     entries = []
     for e in parsed.entries:
         image = None
@@ -61,6 +62,9 @@ def parse_feed(content: bytes | str, source: str) -> list[Entry]:
             image = e.media_thumbnail[0].get("url")
         elif e.get("media_content"):
             image = next((m.get("url") for m in e.media_content if m.get("medium") == "image"), None)
+        elif isinstance(e.get("image"), dict):
+            image = e.image.get("href")
+        image = image or feed_image
         entries.append(
             Entry(
                 title=_clean(e.get("title", "(untitled)"), 200),
@@ -254,6 +258,133 @@ class YouTubeWidget(_FeedWidgetBase):
         ]
         if errors:
             sections.append({"text": "Some channels failed:\n" + "\n".join(f"- {e}" for e in errors)})
+        return {"sections": sections}
+
+
+async def resolve_youtube_channel(http: httpx.AsyncClient, text: str) -> tuple[str, str]:
+    """Turn a channel URL, @handle or channel id into (channel_id, channel name)."""
+    text = text.strip()
+    m = re.fullmatch(r"(?:https?://(?:www\.|m\.)?youtube\.com/channel/)?(UC[0-9A-Za-z_-]{22})/?", text)
+    if m:
+        channel_id = m.group(1)
+    else:
+        if text.startswith("@"):
+            page = f"https://www.youtube.com/{text}"
+        elif re.match(r"^(https?://)?(www\.|m\.)?youtube\.com/", text):
+            page = text if text.startswith("http") else "https://" + text
+        elif re.fullmatch(r"[\w.\-]+", text):
+            page = f"https://www.youtube.com/@{text}"
+        else:
+            raise WidgetError("Paste a YouTube channel link, an @handle or a channel id (UC...)")
+        resp = await http.get(page, headers={"Accept-Language": "en", "Cookie": "CONSENT=YES+1"})
+        if resp.status_code == 404:
+            raise WidgetError(f"YouTube says that channel does not exist: {text}")
+        resp.raise_for_status()
+        found = re.search(r'"(?:channelId|externalId)":"(UC[0-9A-Za-z_-]{22})"', resp.text) \
+            or re.search(r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[0-9A-Za-z_-]{22})"',
+                         resp.text)
+        if not found:
+            raise WidgetError(f"Could not find the channel id on {page}")
+        channel_id = found.group(1)
+    resp = await http.get(f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}")
+    resp.raise_for_status()
+    name = feedparser.parse(resp.content).feed.get("title") or channel_id
+    return channel_id, name
+
+
+async def resolve_podcast(http: httpx.AsyncClient, text: str) -> tuple[str, str]:
+    """Turn an RSS URL or an Apple Podcasts link into (feed url, podcast name)."""
+    text = text.strip()
+    if not re.match(r"^https?://", text):
+        raise WidgetError("Paste the podcast's RSS feed or Apple Podcasts link, or search by name")
+    apple = re.search(r"podcasts\.apple\.com/.*/id(\d+)", text)
+    if apple:
+        resp = await http.get("https://itunes.apple.com/lookup", params={"id": apple.group(1), "entity": "podcast"})
+        resp.raise_for_status()
+        results = [r for r in resp.json().get("results", []) if r.get("feedUrl")]
+        if not results:
+            raise WidgetError("Apple Podcasts does not publish a feed for that show")
+        return results[0]["feedUrl"], results[0].get("collectionName") or ""
+    if urlparse(text).hostname in ("open.spotify.com", "spotify.com"):
+        raise WidgetError("Spotify links have no public feed. Search the podcast by name instead.")
+    resp = await http.get(text)
+    resp.raise_for_status()
+    feed_url = text
+    if _looks_like_html(resp):
+        feed_url = discover_feed_url(resp.text, str(resp.url))
+        if not feed_url:
+            raise WidgetError("No podcast feed found at that address")
+        resp = await http.get(feed_url)
+        resp.raise_for_status()
+    parsed = feedparser.parse(resp.content)
+    if not parsed.entries and not parsed.feed.get("title"):
+        raise WidgetError("That address is not a podcast feed")
+    return feed_url, parsed.feed.get("title") or feed_url
+
+
+async def search_podcasts(http: httpx.AsyncClient, term: str, limit: int = 8) -> list[dict[str, str]]:
+    """Search Apple's free podcast directory (no key). Returns name/author/feed/image."""
+    resp = await http.get("https://itunes.apple.com/search",
+                          params={"media": "podcast", "term": term, "limit": limit})
+    resp.raise_for_status()
+    return [
+        {"name": r.get("collectionName", ""), "author": r.get("artistName", ""),
+         "url": r["feedUrl"], "image": r.get("artworkUrl100", "")}
+        for r in resp.json().get("results", []) if r.get("feedUrl")
+    ]
+
+
+@register("podcast")
+class PodcastWidget(_FeedWidgetBase):
+    """New episodes from podcasts (their public RSS feeds).
+
+    Options:
+      feeds: list of {name, url}
+      new_within_hours: badge window (default 72)
+      per_podcast: latest episodes listed per show (default 1)
+      artwork: show cover art (default true)
+    """
+
+    default_refresh_minutes = 60
+    default_new_hours = 72
+
+    def validate(self) -> None:
+        self.option("feeds", required=True)
+
+    async def fetch(self) -> dict[str, Any]:
+        feeds = _feed_list(self.option("feeds"))
+        results = await asyncio.gather(
+            *(fetch_entries(self.ctx.http, url, name) for name, url in feeds), return_exceptions=True
+        )
+        now = self.ctx.now()
+        per = int(self.option("per_podcast", 1))
+        latest: list[Entry] = []
+        errors, with_new = [], []
+        new_count = 0
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
+        for (name, url), result in zip(feeds, results):
+            if isinstance(result, BaseException):
+                log.warning("podcast %s failed: %s", url, result)
+                errors.append(f"{name or url}: {result}")
+                continue
+            new = [e for e in result if self.is_new(e, now)]
+            new_count += len(new)
+            if new:
+                with_new.append(name or result[0].source)
+            latest += sorted(result, key=lambda e: e.published or _epoch, reverse=True)[:per]
+        if not latest and errors:
+            raise WidgetError("; ".join(errors))
+        latest.sort(key=lambda e: e.published or _epoch, reverse=True)
+        items, _ = self.entry_items(latest, len(latest), show_images=self.option("artwork", True))
+        window = self.new_window_hours
+        label = f"{window / 24:g} days" if window % 24 == 0 else f"{window:g}h"
+        sections = [
+            {"stats": [stat(f"New episodes ({label})", new_count, trend="up" if new_count else None)],
+             "text": ("From: " + ", ".join(with_new)) if with_new else "No new episodes."},
+            {"heading": "Latest episodes", "items": items, "empty": "No episodes found."},
+        ]
+        if errors:
+            sections.append({"text": "Some podcasts failed:\n" + "\n".join(f"- {e}" for e in errors)})
         return {"sections": sections}
 
 

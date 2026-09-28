@@ -49,9 +49,10 @@ class WidgetConfig:
 @dataclass
 class AIConfig:
     enabled: bool = False
-    model: str = "claude-opus-5"
+    provider: str = "gemini"  # gemini (free tier) | anthropic
+    model: str = ""  # empty = the provider's default model
     api_key: str = ""
-    language: str = "English"
+    language: str = "Spanish"
 
 
 @dataclass
@@ -65,13 +66,18 @@ class AppConfig:
 _WIDGET_KEYS = {"id", "type", "title", "refresh_minutes", "size", "enabled", "options"}
 
 
-def parse_config(raw: dict[str, Any]) -> AppConfig:
-    raw = expand_env(raw or {})
+def parse_config(raw: dict[str, Any], expand: bool = True) -> AppConfig:
+    raw = expand_env(raw or {}) if expand else (raw or {})
     ai_raw = raw.get("ai") or {}
+    provider = (ai_raw.get("provider") or AIConfig.provider).lower()
+    if provider not in ("gemini", "anthropic"):
+        raise ConfigError(f"ai.provider must be 'gemini' or 'anthropic', not '{provider}'")
+    env_key = os.environ.get("GEMINI_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY", "")
     ai = AIConfig(
         enabled=bool(ai_raw.get("enabled", False)),
+        provider=provider,
         model=ai_raw.get("model") or AIConfig.model,
-        api_key=ai_raw.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", ""),
+        api_key=ai_raw.get("api_key") or env_key,
         language=ai_raw.get("language") or AIConfig.language,
     )
 
@@ -108,11 +114,16 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
     )
 
 
-def load_config(path: str | Path) -> AppConfig:
+def load_raw_config(path: str | Path) -> dict[str, Any]:
+    """Read config.yaml with ${ENV} references already expanded."""
     path = Path(path)
     if not path.exists():
         raise ConfigError(
             f"Config file '{path}' not found. Copy config.example.yaml to config.yaml to get started."
         )
     with path.open(encoding="utf-8") as fh:
-        return parse_config(yaml.safe_load(fh))
+        return expand_env(yaml.safe_load(fh) or {})
+
+
+def load_config(path: str | Path) -> AppConfig:
+    return parse_config(load_raw_config(path), expand=False)

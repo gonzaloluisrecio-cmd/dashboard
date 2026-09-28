@@ -90,9 +90,14 @@ class CalendlyWidget(Widget):
         if upcoming:
             first = datetime.fromisoformat(upcoming[0]["start_time"].replace("Z", "+00:00")).astimezone(tz)
             nxt = f"Next: {first:%H:%M} {upcoming[0].get('name', '')}"
+        people = list(dict.fromkeys(
+            p.get("name") or p.get("email", "") for page in invitees for p in page if p.get("name") or p.get("email")
+        ))
         return {
             "sections": [
-                {"stats": [stat("Meetings today" if days == 1 else f"Meetings ({days} days)", len(events)), stat("Still to go", len(upcoming), sub=nxt)]},
+                {"stats": [stat("Meetings today" if days == 1 else f"Meetings ({days} days)", len(events)),
+                           stat("Still to go", len(upcoming), sub=nxt)],
+                 "text": ("Meeting with: " + ", ".join(people)) if people else None},
                 {"items": items, "empty": "Nothing scheduled — enjoy the free day."},
             ]
         }

@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2563eb">
   <title>Dashboard</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -15,6 +19,7 @@
     <div class="actions">
       <button id="theme" type="button" title="Toggle light/dark">◐</button>
       <button id="refresh-all" type="button">Refresh all</button>
+      <a class="button" href="/settings" title="Add or remove accounts">⚙ Settings</a>
     </div>
   </header>
   <main id="grid" class="grid"></main>
@@ -28,6 +33,7 @@
       <div class="card-body"><p class="muted">Loading…</p></div>
     </section>
   </template>
+  <script src="/static/theme.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

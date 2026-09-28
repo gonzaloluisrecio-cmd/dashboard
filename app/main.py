@@ -1,7 +1,10 @@
-"""FastAPI server: serves the frontend and one JSON endpoint per widget."""
+"""FastAPI server: serves the frontend, one JSON endpoint per widget, the
+Settings API (add/delete accounts from the app) and an optional password login."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import os
 import time
@@ -13,11 +16,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import AppConfig, load_config
+from .config import AppConfig, load_raw_config, parse_config
+from .settings import SettingsStore, apply_settings
+from .settings_api import router as settings_router
 from .summarizer import Summarizer
 from .widgets import Context, Widget, WidgetError, get_widget_class
 
@@ -39,7 +44,7 @@ class Dashboard:
 
     def __init__(self, config: AppConfig, http: httpx.AsyncClient):
         self.config = config
-        self.ctx = Context(http=http, tz=ZoneInfo(config.timezone), summarizer=Summarizer(config.ai))
+        self.ctx = Context(http=http, tz=ZoneInfo(config.timezone), summarizer=Summarizer(config.ai, http))
         self.widgets: dict[str, Widget] = {}
         self.setup_errors: dict[str, str] = {}
         self.cache: dict[str, CacheEntry] = {}
@@ -60,6 +65,7 @@ class Dashboard:
         return {
             "title": self.config.title,
             "timezone": self.config.timezone,
+            "ai": self.ctx.summarizer.available,
             "widgets": [
                 {
                     "id": wc.id,
@@ -109,9 +115,23 @@ class Dashboard:
         # Keep showing the last good data (marked stale by the frontend) on error.
 
 
-def create_app(config_path: str | os.PathLike | None = None) -> FastAPI:
+SESSION_COOKIE = "dash_session"
+
+
+def session_token(password: str) -> str:
+    return hmac.new(password.encode(), b"dashboard-session-v1", hashlib.sha256).hexdigest()
+
+
+def create_app(config_path: str | os.PathLike | None = None,
+               settings_path: str | os.PathLike | None = None) -> FastAPI:
     load_dotenv(ROOT / ".env")
     config_path = Path(config_path or os.environ.get("DASHBOARD_CONFIG", ROOT / "config.yaml"))
+    settings_path = Path(settings_path or os.environ.get("DASHBOARD_SETTINGS", ROOT / "data" / "settings.json"))
+    password = os.environ.get("DASHBOARD_PASSWORD", "")
+
+    def build(app: FastAPI) -> None:
+        raw = apply_settings(load_raw_config(config_path), app.state.settings.data)
+        app.state.dashboard = Dashboard(parse_config(raw, expand=False), app.state.http)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -120,15 +140,46 @@ def create_app(config_path: str | os.PathLike | None = None) -> FastAPI:
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (personal-dashboard; +https://github.com)"},
         )
-        app.state.dashboard = Dashboard(load_config(config_path), app.state.http)
+        app.state.settings = SettingsStore(settings_path)
+        app.state.rebuild = lambda: build(app)
+        build(app)
         yield
         await app.state.http.aclose()
 
     app = FastAPI(title="Dashboard", lifespan=lifespan)
 
+    if password:
+        expected = session_token(password)
+
+        @app.middleware("http")
+        async def require_login(request: Request, call_next):
+            path = request.url.path
+            if path in ("/login", "/manifest.webmanifest") or path.startswith("/static/"):
+                return await call_next(request)
+            if hmac.compare_digest(request.cookies.get(SESSION_COOKIE, ""), expected):
+                return await call_next(request)
+            if path.startswith("/api/"):
+                return JSONResponse({"detail": "login required"}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+
+    @app.get("/login")
+    async def login_page():
+        return FileResponse(STATIC / "login.html")
+
+    @app.post("/login")
+    async def login(request: Request):
+        body = await request.json()
+        if not password or not hmac.compare_digest(str(body.get("password", "")), password):
+            await asyncio.sleep(1)  # slow down guessing
+            raise HTTPException(401, "Wrong password")
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(SESSION_COOKIE, session_token(password), max_age=180 * 86400,
+                        httponly=True, samesite="lax")
+        return resp
+
     @app.get("/api/layout")
     async def layout():
-        return app.state.dashboard.layout()
+        return {**app.state.dashboard.layout(), "login": bool(password)}
 
     @app.get("/api/widgets/{widget_id}")
     async def widget(widget_id: str, force: bool = False):
@@ -139,13 +190,23 @@ def create_app(config_path: str | os.PathLike | None = None) -> FastAPI:
 
     @app.post("/api/reload")
     async def reload():
-        """Re-read config.yaml without restarting the server."""
-        app.state.dashboard = Dashboard(load_config(config_path), app.state.http)
+        """Re-read config.yaml and the settings without restarting the server."""
+        build(app)
         return app.state.dashboard.layout()
+
+    app.include_router(settings_router)
 
     @app.get("/")
     async def index():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/settings")
+    async def settings_page():
+        return FileResponse(STATIC / "settings.html")
+
+    @app.get("/manifest.webmanifest")
+    async def manifest():
+        return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
@@ -155,7 +216,13 @@ def run() -> None:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO)
-    uvicorn.run(create_app(), host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))
+    load_dotenv(ROOT / ".env")
+    password = os.environ.get("DASHBOARD_PASSWORD", "")
+    # With a password set, listen on the network so phones/other PCs can connect.
+    host = os.environ.get("HOST") or ("0.0.0.0" if password else "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost") and not password:
+        log.warning("HOST=%s without DASHBOARD_PASSWORD: anyone on your network can open the dashboard", host)
+    uvicorn.run(create_app(), host=host, port=int(os.environ.get("PORT", "8000")))
 
 
 if __name__ == "__main__":

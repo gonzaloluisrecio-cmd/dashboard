@@ -6,3 +6,5 @@ PyYAML>=6.0
 python-dotenv>=1.0
 anthropic>=1.8
 tzdata>=2024.1
+icalendar>=6.0
+recurring-ical-events>=3.0

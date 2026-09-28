@@ -1,64 +1,56 @@
 # Copy to config.yaml and edit. Restart the server (or POST /api/reload) after changes.
-# Secrets: write ${VAR_NAME} and put the value in .env (see .env.example).
+#
+# Your accounts, channels, podcasts and calendars are added from the app itself:
+# open the dashboard and click "⚙ Settings". They are saved in data/settings.json.
+# This file decides which cards exist, their order, size and options.
 #
 # Every widget has:
 #   id               unique name (used in the URL /api/widgets/<id>)
-#   type             dolar | youtube | blog | feed | news | email | ibkr | calendly
+#   type             email | calendly | gcal | youtube | podcast | news | dolar | blog | feed | ibkr
 #   title            card title
 #   size             small | medium | large (2 columns) | full (whole row)
 #   refresh_minutes  optional, overrides the widget's default
 #   enabled          set to false to hide a widget without deleting it
-# ...plus the options specific to its type (documented below and in README.md).
+# ...plus the options specific to its type (documented in README.md).
+# Secrets can be written as ${VAR_NAME} with the value in .env.
 # The order here is the order on screen.
 
 title: Mi Dashboard
 timezone: America/Argentina/Buenos_Aires
 
-# Optional AI summaries for the news and email widgets (Claude API).
+# Optional AI summaries (one line per email, news digest). Easiest: paste a free
+# Gemini key in Settings. Or set it here: provider gemini (free tier) or anthropic.
 ai:
   enabled: false
-  api_key: ${ANTHROPIC_API_KEY}
-  model: claude-opus-5
+  provider: gemini
+  api_key: ${GEMINI_API_KEY}
   language: Spanish
 
 widgets:
-  - id: dolar
-    type: dolar
-    title: Dólar hoy
-    size: medium
-    casas: [oficial, blue, bolsa, contadoconliqui, tarjeta, cripto]
-
-  - id: portfolio
-    type: ibkr
-    title: Interactive Brokers
-    size: medium
-    mode: flex                      # or client_portal
-    flex_token: ${IBKR_FLEX_TOKEN}
-    flex_query_id: ${IBKR_FLEX_QUERY_ID}
-    net_deposits: ${IBKR_NET_DEPOSITS:-}   # optional: total deposited minus withdrawn
-    top_positions: 8
-
-  - id: calendly
-    type: calendly
-    title: Agenda de hoy
-    size: medium
-    token: ${CALENDLY_TOKEN}
-
   - id: email
     type: email
     title: Correo
     size: large
     max_messages: 8
-    accounts:
-      - name: Gmail personal
-        host: imap.gmail.com
-        username: ${GMAIL_USER}
-        password: ${GMAIL_APP_PASSWORD}
-        gmail_primary: true         # only the "Primary" tab
-      # - name: Work
-      #   host: outlook.office365.com
-      #   username: ${WORK_EMAIL_USER}
-      #   password: ${WORK_EMAIL_PASSWORD}
+    # Accounts are added in Settings.
+
+  - id: calendly
+    type: calendly
+    title: Calendly hoy
+    size: medium
+    # Token is added in Settings.
+
+  - id: gcal
+    type: gcal
+    title: Google Calendar hoy
+    size: medium
+    # Calendars are added in Settings.
+
+  - id: dolar
+    type: dolar
+    title: Dólar hoy
+    size: medium
+    casas: [oficial, blue, bolsa, contadoconliqui, tarjeta, cripto]
 
   - id: youtube
     type: youtube
@@ -66,19 +58,14 @@ widgets:
     size: large
     new_within_hours: 24
     limit: 12
-    channels:
-      - { name: Veritasium, handle: "@veritasium" }
-      - { name: Kurzgesagt, channel_id: UCsXVk37bltHxD1rDPwtNM8Q }
+    # Channels are added in Settings.
 
-  - id: blog
-    type: blog
-    title: Blogs
+  - id: podcasts
+    type: podcast
+    title: Podcasts
     size: medium
-    new_within_hours: 72
-    feeds:
-      - { name: Paul Graham, url: "http://www.aaronsw.com/2002/feeds/pgessays.rss" }
-      # The homepage works too if the site advertises its feed:
-      # - { name: Some blog, url: "https://example.com" }
+    new_within_hours: 72      # an episode counts as NEW for 3 days
+    # Podcasts are added in Settings.
 
   - id: news
     type: news
@@ -100,3 +87,24 @@ widgets:
           - { name: The Guardian, url: "https://www.theguardian.com/world/rss" }
           - { name: Al Jazeera, url: "https://www.aljazeera.com/xml/rss/all.xml" }
           - { name: NYT World, url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml" }
+
+  - id: portfolio
+    type: ibkr
+    title: Interactive Brokers
+    size: medium
+    enabled: false                  # set to true after adding the IBKR values to .env
+    mode: flex                      # or client_portal
+    flex_token: ${IBKR_FLEX_TOKEN}
+    flex_query_id: ${IBKR_FLEX_QUERY_ID}
+    net_deposits: ${IBKR_NET_DEPOSITS:-}   # optional: total deposited minus withdrawn
+    top_positions: 8
+
+  - id: blog
+    type: blog
+    title: Blogs
+    size: medium
+    new_within_hours: 72
+    feeds:
+      - { name: Paul Graham, url: "http://www.aaronsw.com/2002/feeds/pgessays.rss" }
+      # The homepage works too if the site advertises its feed:
+      # - { name: Some blog, url: "https://example.com" }

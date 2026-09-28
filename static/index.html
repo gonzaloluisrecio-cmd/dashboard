@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1 id="title">Dashboard</h1>
+      <p id="clock" class="muted"></p>
+    </div>
+    <div class="actions">
+      <button id="theme" type="button" title="Toggle light/dark">◐</button>
+      <button id="refresh-all" type="button">Refresh all</button>
+    </div>
+  </header>
+  <main id="grid" class="grid"></main>
+  <template id="card-tpl">
+    <section class="card">
+      <header class="card-head">
+        <h2></h2>
+        <span class="status muted"></span>
+        <button type="button" class="refresh" title="Refresh">↻</button>
+      </header>
+      <div class="card-body"><p class="muted">Loading…</p></div>
+    </section>
+  </template>
+  <script src="/static/app.js"></script>
+</body>
+</html>

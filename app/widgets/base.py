@@ -89,7 +89,7 @@ class Widget:
     def option(self, name: str, default: Any = None, required: bool = False) -> Any:
         value = self.options.get(name, default)
         if required and value in (None, "", []):
-            raise WidgetError(f"option '{name}' is required for widget '{self.id}'")
+            raise WidgetError(f"Not set up yet: '{name}' is missing. Add it in config.yaml (or .env) and restart.")
         return value
 
     def validate(self) -> None:

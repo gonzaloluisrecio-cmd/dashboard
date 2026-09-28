@@ -16,7 +16,28 @@ Everything is set in **one file, `config.yaml`**: which cards to show, in what
 order, how big, how often they refresh, and what they track. Adding a card
 type means adding one Python file (see [Adding a new widget](#adding-a-new-widget)).
 
-## Quick start
+## Run it on your PC
+
+1. **Install Python** (3.10 or newer) from https://www.python.org/downloads/.
+   On Windows, tick **"Add python.exe to PATH"** in the installer.
+2. **Download this project**: on GitHub, click the green **Code** button →
+   **Download ZIP**, then unzip it anywhere (e.g. your Desktop).
+3. **Start it**:
+   - **Windows**: double-click `start.bat`.
+   - **Mac/Linux**: open a terminal in the folder and run `./start.sh`.
+
+   The first run takes a minute to install what it needs. Then your browser opens
+   **http://127.0.0.1:8000**. Keep the black window open while you use the
+   dashboard; closing it stops the dashboard.
+4. **Personalize it**: open `config.yaml` (your channels, blogs, news, email
+   accounts) and `.env` (tokens and passwords) in Notepad or any text editor.
+   Save, close the black window, and double-click `start.bat` again.
+
+The dollar, YouTube, blog and news cards work right away. The email, Interactive
+Brokers and Calendly cards say "Not set up yet" until you add their credentials
+(see [Setting up each source](#setting-up-each-source)).
+
+## Quick start (command line)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate

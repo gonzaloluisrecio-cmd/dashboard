@@ -117,7 +117,8 @@ class EmailWidget(Widget):
         for acc in self.option("accounts", required=True):
             missing = [k for k in ("host", "username", "password") if not acc.get(k)]
             if missing:
-                raise WidgetError(f"email account '{acc.get('name', '?')}' is missing {', '.join(missing)}")
+                raise WidgetError(f"Not set up yet: email account '{acc.get('name', '?')}' is missing "
+                                  f"{', '.join(missing)}. Add it in .env and restart.")
 
     async def _account_section(self, acc: dict[str, Any]) -> dict[str, Any]:
         name = acc.get("name") or acc["username"]
